@@ -1,0 +1,7 @@
+opendatasets
+numpy
+pandas
+scipy
+sklearn
+matplotlib
+tqdm
