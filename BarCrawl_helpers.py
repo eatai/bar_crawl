@@ -14,6 +14,14 @@ C = ['C1', 'C2']
 rtp = ['rho', 'theta', 'phi']
 S = ['S1', 'S2']
 
+def parse_array(x, gap_width):
+    gap_start_idx = np.argwhere(np.diff(x)>=gap_width)+1
+    
+    band_start_idx = np.append(0, gap_start_idx)
+    band_end_idx = np.append(gap_start_idx, len(x)-1)
+
+    return np.vstack((band_start_idx, band_end_idx)).transpose()
+
 def cart_to_spherical(xyz):
     # INPUT
     # xyz - nx3 array of cartesian coordinates
@@ -139,33 +147,110 @@ def rising_falling_edge(y):
 # Plotting
 import matplotlib.pyplot as plt
 
-TP_COLOR = '#AED581'
-FP_COLOR = '#FFE082'
-FN_COLOR = '#FF8A65'
-TN_COLOR = '#DCEDC8'
+TP_COLOR = '#AED581' # Medium Green
+FP_COLOR = '#FFE082' # Medium Yellow
+FN_COLOR = '#FF8A65' # Medium Pink (This is the dangerous situation)
+TN_COLOR = '#DCEDC8' # Light Green
 
-def plot_confusion_time(t, y_true, y_pred, ax=plt.gca, ylims = [0,1], **kwaargs):
+TP_COLOR = '#AED581' # Medium Green
+FP_COLOR = '#ffad99' # Light Pink
+FN_COLOR = '#ff5c33' # Dark Pink (This is the dangerous situation)
+TN_COLOR = '#AED581' # Light Green
 
-    # y_true in {0,0.5}, y_pred in {0, 1}
-    # 0.5*y_true + y_pred in {0, 0.5, 1.5, 2}
+def get_ax_ij(k, ax):
+    return k%ax.shape[0], int(np.floor(k/ax.shape[0]))
+
+def plot_confusion_time(t, tac, y_true, y_pred, ax=plt.gca, ylim = None, **kwargs):
+# Plot predictions over time of trial
+    TAC_LIMIT = 0.08
+    # y_true in {0,1}, y_pred in {0, 2}
+    # y_true + 2*y_pred in {0, 1, 2, 3}
     # 0: True Negative
-    # 0.5: False Negative
-    # 1.5: False Positive
-    # 2: True Positive
-
-    y_match = 0.5 * y_true + y_pred
-
-    y_tp = (y_match==2)
-    y_fp = (y_match==1.5)
-    y_fn = (y_match==0.5)
+    # 1: False Negative
+    # 2: False Positive
+    # 3: True Positive
+    
+    if ylim is None:
+        ylim = ax.get_ylim()
+        
+    y_match = y_true + 2*y_pred
+    
+    y_tp = (y_match==3)
+    y_fp = (y_match==2)
+    y_fn = (y_match==1)
     y_tn = (y_match==0)
 
-    L1, = ax.fill_between(t, ylims[0], ylims[1], where = y_tp, color = TP_COLOR)
-    L2, = ax.fill_between(t, ylims[0], ylims[1], where = y_fp, color = FP_COLOR)
-    L3, = ax.fill_between(t, ylims[0], ylims[1], where = y_tn, color = TN_COLOR)
-    L4, = ax.fill_between(t, ylims[0], ylims[1], where = y_fn, color = FN_COLOR)
+    L1 = ax.fill_between(t, tac, ylim[1], where = y_tp, color = TP_COLOR, **kwargs)
+    L2 = ax.fill_between(t, tac, ylim[1], where = y_fp, color = FP_COLOR, **kwargs)
+    L3 = ax.fill_between(t, ylim[0], TAC_LIMIT, where = y_tn, color = TN_COLOR, **kwargs)
+    L4 = ax.fill_between(t, ylim[0], TAC_LIMIT, where = y_fn, color = FN_COLOR, **kwargs)
 
     return L1, L2, L3, L4,
+
+
+
+from itertools import product
+
+
+def plot_confusion_mat(confusion, ax = plt.gca, axes_labels = None, display_labels=None, **kwargs):
+# Plot confusion matrix grid/heatmap
+
+    ticks = range(confusion.shape[0])
+    
+    ax.imshow(confusion, vmin=0, vmax=1.0)
+    
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+    
+    ax.set_xticklabels(display_labels)
+    ax.set_yticklabels(display_labels, rotation = 'vertical', verticalalignment='center')
+    
+    if axes_labels is not None:
+        ax.set_xlabel(axes_labels[0])
+        ax.set_ylabel(axes_labels[1])
+    
+    for i,j in product(ticks, ticks):
+        ax.text(i,j, f'{confusion[i,j]:.4f}', horizontalalignment = 'center')
+    
+    return ax
+
+
+def plot_feature_importance(clf, cols):
+    fi = clf.feature_importances_
+    idx = np.argsort(-1*fi)
+
+    fig, ax = plt.subplots(1,1, figsize=(20,5))
+    ax.bar(np.arange(len(idx)), fi[idx], tick_label=cols[idx])
+    ax.set_xticks(ticks = np.arange(len(idx)), labels = cols[idx], rotation=60, ha='right')
+    ax.set_title('Feature Importance')
+    plt.show()
+    return fig, ax
+
+ ## Logging training trials crudely       
+
+from sklearn.metrics import confusion_matrix
+
+def log_nn_training(history):
+    model_string = []
+    history.model.summary(print_fn=lambda x: model_string.append(x))
+    model_string = "\n".join(model_string)
+    TN, FP, FN, TP  = metrics.confusion_matrix(y_test, y_pred, normalize=None).ravel()
+    recall_0 = TN/(TN+FP)
+    recall_1 = TP/(TP+FN)
+    prec_0 = TN/(TN+FN)
+    prec_1 = TP/(TP+FP)
+    accuracy = (TN+TP)/(TN+TP+FN+FP)
+
+    nn_results = pd.DataFrame(
+        {
+        'accuracy':[accuracy],
+        'recall_1':[recall_1],
+        'prec_1': [prec_1],
+        'recall_0':[recall_0],
+        'prec_0':[prec_0]
+        })
+
+    return nn_results
 
 
     
